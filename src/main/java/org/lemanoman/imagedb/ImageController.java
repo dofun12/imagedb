@@ -9,6 +9,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import javax.imageio.ImageIO;
+import java.awt.*;
+import java.awt.image.BufferedImage;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -61,6 +64,62 @@ public class ImageController {
             e.printStackTrace();
         }
         return ResponseEntity.status(404).body(null);
+
+    }
+
+
+    @RequestMapping(value = "thumb/{id}", method = RequestMethod.GET)
+    @ResponseBody
+    public ResponseEntity<InputStreamResource> downloadThumb(@PathVariable String id) {
+        try {
+            File myfile = new File(getDefaultPath(Optional.of(id.substring(0, 2))), id);
+            if (!myfile.exists()) {
+                return ResponseEntity.status(404).body(null);
+            }
+            String extNum = id.substring(id.length() - 3);
+            MediaExt mediaExt = numberToMediaExt(extNum);
+            FileInputStream fis = new FileInputStream(myfile);
+            MediaType mediaType = MediaType.IMAGE_PNG;
+            if (mediaExt != null) {
+                mediaType = MediaType.valueOf(mediaExt.getContentType());
+            }
+            try (
+                ByteArrayOutputStream os = new ByteArrayOutputStream();
+            ){
+                BufferedImage bufferedImage = cropImageSquare(fis);
+                ImageIO.write(bufferedImage, "png", os);                          // Passing: ​(RenderedImage im, String formatName, OutputStream output)
+                InputStream is = new ByteArrayInputStream(os.toByteArray());
+                return ResponseEntity.ok()
+                        .contentLength(myfile.length())
+                        .contentType(mediaType)
+                        .body(new InputStreamResource(is));
+            }catch (Exception ex){
+                ex.printStackTrace();
+            }
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        }
+        return ResponseEntity.status(404).body(null);
+
+    }
+
+    private BufferedImage cropImageSquare(InputStream inputStream) throws IOException {
+        // Get a BufferedImage object from a byte array
+        BufferedImage originalImage = ImageIO.read(inputStream);
+        double height = originalImage.getHeight();
+        double width = originalImage.getWidth();
+        if(width>200){
+            double scale = (200d/ width);
+            int targetWidth =(int) Math.round(width * scale);
+            int targetHeight = (int) Math.round( height * scale);
+            BufferedImage resizedImage = new BufferedImage(targetWidth, targetHeight, BufferedImage.TYPE_INT_RGB);
+            Graphics2D graphics2D = resizedImage.createGraphics();
+            graphics2D.drawImage(originalImage, 0, 0, targetWidth, targetHeight, null);
+            graphics2D.dispose();
+            return resizedImage;
+        }
+        return originalImage;
+
 
     }
 
