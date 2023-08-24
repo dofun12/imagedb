@@ -1,6 +1,8 @@
 package org.lemanoman.imagedb;
 
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpStatus;
@@ -13,7 +15,6 @@ import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.*;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 @RestController
@@ -23,6 +24,17 @@ public class ImageController {
 
     @Value("${imagedb.upload.path}")
     private String path;
+
+    final ObjectMapper mapper = new ObjectMapper();
+
+    @Value("${imagedb.metadata.path}")
+    private String metadata;
+
+    private ImageStoreService imageStoreService;
+
+    public ImageController(ImageStoreService imageStoreService){
+        this.imageStoreService = imageStoreService;
+    }
 
     private File getDefaultPath(Optional<String> subdir) {
         File defaultDir = new File(path);
@@ -159,9 +171,42 @@ public class ImageController {
         return "";
     }
 
+
+    @GetMapping(value = "/details/{id}", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ImageMetadataDto> getDetailsImage(@PathVariable String id){
+        final var metadata = imageStoreService.getMetadata(id);
+        if(metadata==null){
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
+        }
+        return ResponseEntity.status(HttpStatus.OK).body(metadata);
+    }
+
     @PostMapping("/upload")
-    public ResponseEntity<String> uplaodImage(@RequestParam("image") MultipartFile file)
+    public ResponseEntity<String> uploadImage(@RequestParam("image") MultipartFile file)
             throws IOException {
+        return defaultUploadImage(file, false);
+    }
+
+    @PostMapping("/upload_tmp")
+    public ResponseEntity<String> uploadTemporaryImage(@RequestParam("image") MultipartFile file)
+            throws IOException {
+        return defaultUploadImage(file, true);
+    }
+
+    @PutMapping("/persist/{id}")
+    public ResponseEntity<String> persistTempImage(@PathVariable String id){
+        ImageMetadataDto temp = imageStoreService.getMetadata(id);
+        if(temp==null){
+            return  ResponseEntity.status(HttpStatus.NO_CONTENT)
+                    .body(null);
+        }
+        imageStoreService.storeMetadata(temp.getId(), temp.getPath(), false);
+        return  ResponseEntity.status(HttpStatus.OK)
+                .body("Alterado com sucesso!");
+    }
+
+
+    private ResponseEntity<String> defaultUploadImage(MultipartFile file, boolean temporary) throws IOException {
         ByteArrayInputStream bis = new ByteArrayInputStream(file.getBytes());
         String uuid = UUID.randomUUID().toString();
         String defaultName = uuid + ".png";
@@ -178,6 +223,7 @@ public class ImageController {
                 Optional.of(name.substring(0, 2)))
                 , name
         );
+        imageStoreService.storeMetadata(name, out.getAbsolutePath(), temporary);
         FileOutputStream fos = new FileOutputStream(out);
         byte[] cache = new byte[1024];
         while (bis.read(cache) > -1) {
